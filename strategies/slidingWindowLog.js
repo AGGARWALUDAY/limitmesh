@@ -1,6 +1,6 @@
 const requests = new Map();
 
-function createSlidingWindowLog(options) {
+function slidingWindowLog(options) {
   const { limit, window } = options;
 
   return (req, res, next) => {
@@ -36,4 +36,4 @@ function createSlidingWindowLog(options) {
   };
 }
 
-module.exports = createSlidingWindowLog;
+module.exports = slidingWindowLog;

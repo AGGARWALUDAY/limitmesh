@@ -1,6 +1,6 @@
 const buckets = new Map();
 
-function createTokenBucket(options) {
+function tokenBucket(options) {
   const { capacity, refillRate, refillWindow } = options;
 
   return (req, res, next) => {
@@ -45,4 +45,4 @@ function createTokenBucket(options) {
     }
   };
 }
-module.exports = createTokenBucket;
+module.exports = tokenBucket;

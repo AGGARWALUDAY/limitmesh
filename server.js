@@ -1,17 +1,20 @@
 const express = require("express");
-// const createRateLimiter = require("./middleware/RateLimiter.js");
-const createTokenBucket = require("./strategies/tokenBucket.js");
+const createRateLimiter = require("./middleware/RateLimiter.js");
+
 const app = express();
+
 const PORT = 3000;
 
 // const rateLimiter = createRateLimiter({
+//   algorithm: "fixed-window",
 //   limit: 5,
 //   window: 60 * 1000,
 // });
-const rateLimiter = createTokenBucket({
-  capacity: 2,
-  refillRate: 5,
-  refillWindow: 60 * 1000,
+
+const rateLimiter = createRateLimiter({
+  algorithm: "sliding-window-counter",
+  limit: 5,
+  window: 10 * 1000,
 });
 
 app.use(rateLimiter);
