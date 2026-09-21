@@ -1,14 +1,17 @@
-const requests = new Map();
+const setRateLimitHeaders = require("../utils/rateLimitHeaders");
 
-function slidingWindowCounter(options) {
+console.log("Sliding Window Counter");
+
+function slidingWindowCounter(options, store) {
   const { limit, window } = options;
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const ip = req.headers["x-test-ip"] || req.ip;
     const currentTime = Date.now();
 
-    let data = requests.get(ip);
+    let data = await store.get(ip);
 
+    // First request from this IP
     if (!data) {
       data = {
         currentWindowStart: currentTime,
@@ -16,38 +19,67 @@ function slidingWindowCounter(options) {
         previousCount: 0,
       };
 
-      requests.set(ip, data);
+      await store.set(ip, data);
     }
 
-    const timePassed = currentTime - data.currentWindowStart;
+    const timePassed =
+      currentTime - data.currentWindowStart;
 
-    // Move to the next window
+    // Current window has expired
     if (timePassed >= window) {
       data.previousCount = data.currentCount;
       data.currentCount = 0;
       data.currentWindowStart = currentTime;
     }
 
-    const timeIntoCurrentWindow = currentTime - data.currentWindowStart;
+    const timeIntoCurrentWindow =
+      currentTime - data.currentWindowStart;
 
-    const previousWindowWeight = (window - timeIntoCurrentWindow) / window;
+    // Calculate weight of previous window
+    const previousWindowWeight =
+      (window - timeIntoCurrentWindow) / window;
 
+    // Estimate requests in sliding window
     const estimatedCount =
-      data.previousCount * previousWindowWeight + data.currentCount;
+      data.previousCount * previousWindowWeight +
+      data.currentCount;
 
+    // Limit exceeded
     if (estimatedCount >= limit) {
-      res.setHeader("X-RateLimit-Limit", limit);
-      res.setHeader("X-RateLimit-Remaining", 0);
+      const resetTime =
+        data.currentWindowStart + window;
+
+      const retryAfter =
+        (resetTime - currentTime) / 1000;
+
+      setRateLimitHeaders(res, {
+        limit,
+        remaining: 0,
+        lastRequestTime: currentTime,
+        resetTime,
+        retryAfter,
+      });
 
       return res.status(429).send("Too Many Requests");
     }
 
+    // Request allowed
     data.currentCount++;
 
-    const remaining = Math.max(0, Math.floor(limit - estimatedCount - 1));
+    const remaining = Math.max(
+      0,
+      Math.floor(limit - estimatedCount - 1)
+    );
 
-    res.setHeader("X-RateLimit-Limit", limit);
-    res.setHeader("X-RateLimit-Remaining", remaining);
+    const resetTime =
+      data.currentWindowStart + window;
+
+    setRateLimitHeaders(res, {
+      limit,
+      remaining,
+      lastRequestTime: currentTime,
+      resetTime,
+    });
 
     next();
   };

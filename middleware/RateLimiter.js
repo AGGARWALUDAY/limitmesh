@@ -1,5 +1,5 @@
 const strategies = require("../strategies");
-
+const MemoryStore=require("../storage/memoryStore.js");
 function createRateLimiter(options) {
   const { algorithm } = options;
 
@@ -8,8 +8,9 @@ function createRateLimiter(options) {
   if (!strategy) {
     throw new Error(`Unknown rate limiting algorithm: ${algorithm}`);
   }
+  const store=new MemoryStore();
 
-  return strategy(options);
+  return strategy(options, store);
 }
 
 module.exports = createRateLimiter;

@@ -1,59 +1,48 @@
-function fixedWindow(options) {
+const setRateLimitHeaders = require("../utils/rateLimitHeaders");
+
+console.log("Fixed Window");
+
+function fixedWindow(options, store) {
   const limit = options.limit;
   const window = options.window;
 
-  const rateLimits = new Map();
-
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const ip = req.headers["x-test-ip"] || req.ip;
     const currentTime = Date.now();
 
+    console.log("Request received:", ip);
+
     // First request from this IP
-    if (!rateLimits.has(ip)) {
-      rateLimits.set(ip, {
+    if (!(await store.has(ip))) {
+      await store.set(ip, {
         count: 1,
         startTime: currentTime,
       });
 
-      res.setHeader("X-RateLimit-Limit", limit);
-      res.setHeader("X-RateLimit-Remaining", limit - 1);
-      res.setHeader(
-        "X-RateLimit-Reset",
-        Math.ceil((currentTime + window) / 1000)
-      );
-
-      res.setHeader(
-        "X-RateLimit-Reset-Time",
-        new Date(currentTime + window).toLocaleString("en-IN", {
-          timeZone: "Asia/Kolkata",
-        })
-      );
+      setRateLimitHeaders(res, {
+        limit,
+        remaining: limit - 1,
+        lastRequestTime: currentTime,
+        resetTime: currentTime + window,
+      });
 
       next();
       return;
     }
 
-    const data = rateLimits.get(ip);
+    const data = await store.get(ip);
 
     // Current window has expired
     if (currentTime >= data.startTime + window) {
       data.count = 1;
       data.startTime = currentTime;
 
-      res.setHeader("X-RateLimit-Limit", limit);
-      res.setHeader("X-RateLimit-Remaining", limit - 1);
-
-      res.setHeader(
-        "X-RateLimit-Reset",
-        Math.ceil((currentTime + window) / 1000)
-      );
-
-      res.setHeader(
-        "X-RateLimit-Reset-Time",
-        new Date(currentTime + window).toLocaleString("en-IN", {
-          timeZone: "Asia/Kolkata",
-        })
-      );
+      setRateLimitHeaders(res, {
+        limit,
+        remaining: limit - 1,
+        lastRequestTime: currentTime,
+        resetTime: currentTime + window,
+      });
 
       next();
       return;
@@ -63,20 +52,14 @@ function fixedWindow(options) {
     if (data.count < limit) {
       data.count++;
 
-      res.setHeader("X-RateLimit-Limit", limit);
-      res.setHeader("X-RateLimit-Remaining", limit - data.count);
+      const resetTime = data.startTime + window;
 
-      res.setHeader(
-        "X-RateLimit-Reset",
-        Math.ceil((data.startTime + window) / 1000)
-      );
-
-      res.setHeader(
-        "X-RateLimit-Reset-Time",
-        new Date(data.startTime + window).toLocaleString("en-IN", {
-          timeZone: "Asia/Kolkata",
-        })
-      );
+      setRateLimitHeaders(res, {
+        limit,
+        remaining: limit - data.count,
+        lastRequestTime: currentTime,
+        resetTime,
+      });
 
       next();
       return;
@@ -86,20 +69,18 @@ function fixedWindow(options) {
     console.log("Rate limit exceeded");
     console.log("IP:", ip);
 
-    res.setHeader("X-RateLimit-Limit", limit);
-    res.setHeader("X-RateLimit-Remaining", 0);
+    const resetTime = data.startTime + window;
 
-    res.setHeader(
-      "X-RateLimit-Reset",
-      Math.ceil((data.startTime + window) / 1000)
-    );
+    const retryAfter =
+      (resetTime - currentTime) / 1000;
 
-    res.setHeader(
-      "X-RateLimit-Reset-Time",
-      new Date(data.startTime + window).toLocaleString("en-IN", {
-        timeZone: "Asia/Kolkata",
-      })
-    );
+    setRateLimitHeaders(res, {
+      limit,
+      remaining: 0,
+      lastRequestTime: currentTime,
+      resetTime,
+      retryAfter,
+    });
 
     res.status(429).send("Too Many Requests");
   };
