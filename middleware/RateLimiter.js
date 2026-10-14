@@ -1,5 +1,6 @@
 const strategies = require("../strategies");
-const MemoryStore=require("../storage/memoryStore.js");
+const RedisStore = require("../storage/redisStore");
+
 function createRateLimiter(options) {
   const { algorithm } = options;
 
@@ -8,7 +9,8 @@ function createRateLimiter(options) {
   if (!strategy) {
     throw new Error(`Unknown rate limiting algorithm: ${algorithm}`);
   }
-  const store=new MemoryStore();
+
+  const store = new RedisStore();
 
   return strategy(options, store);
 }

@@ -1,88 +1,43 @@
 const setRateLimitHeaders = require("../utils/rateLimitHeaders");
+const { fixedWindowCheck } = require("../lib/redisScripts");
 
 console.log("Fixed Window");
 
 function fixedWindow(options, store) {
-  const limit = options.limit;
-  const window = options.window;
+  const { limit, window } = options;
 
   return async (req, res, next) => {
-    const ip = req.headers["x-test-ip"] || req.ip;
-    const currentTime = Date.now();
+    try {
+      const ip = req.headers["x-test-ip"] || req.ip;
+      const key = `limitmesh:fixed-window:${ip}`;
 
-    console.log("Request received:", ip);
+      const currentTime = Date.now();
 
-    // First request from this IP
-    if (!(await store.has(ip))) {
-      await store.set(ip, {
-        count: 1,
-        startTime: currentTime,
-      });
+      const { allowed, count, ttl } = await fixedWindowCheck(
+        key,
+        limit,
+        window
+      );
+
+      const resetTime = currentTime + Math.max(0, ttl);
+      const retryAfter = Math.ceil(ttl / 1000);
 
       setRateLimitHeaders(res, {
         limit,
-        remaining: limit - 1,
-        lastRequestTime: currentTime,
-        resetTime: currentTime + window,
-      });
-
-      next();
-      return;
-    }
-
-    const data = await store.get(ip);
-
-    // Current window has expired
-    if (currentTime >= data.startTime + window) {
-      data.count = 1;
-      data.startTime = currentTime;
-
-      setRateLimitHeaders(res, {
-        limit,
-        remaining: limit - 1,
-        lastRequestTime: currentTime,
-        resetTime: currentTime + window,
-      });
-
-      next();
-      return;
-    }
-
-    // Still inside the current window
-    if (data.count < limit) {
-      data.count++;
-
-      const resetTime = data.startTime + window;
-
-      setRateLimitHeaders(res, {
-        limit,
-        remaining: limit - data.count,
+        remaining: Math.max(0, limit - count),
         lastRequestTime: currentTime,
         resetTime,
+        retryAfter: allowed ? 0 : retryAfter,
       });
 
+      if (!allowed) {
+        return res.status(429).send("Too Many Requests");
+      }
+
       next();
-      return;
+    } catch (error) {
+      next(error);
     }
-
-    // Limit exceeded
-    console.log("Rate limit exceeded");
-    console.log("IP:", ip);
-
-    const resetTime = data.startTime + window;
-
-    const retryAfter =
-      (resetTime - currentTime) / 1000;
-
-    setRateLimitHeaders(res, {
-      limit,
-      remaining: 0,
-      lastRequestTime: currentTime,
-      resetTime,
-      retryAfter,
-    });
-
-    res.status(429).send("Too Many Requests");
   };
 }
 
