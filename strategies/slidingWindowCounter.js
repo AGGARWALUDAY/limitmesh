@@ -1,7 +1,5 @@
 const setRateLimitHeaders = require("../utils/rateLimitHeaders");
 
-console.log("Sliding Window Counter");
-
 function slidingWindowCounter(options, store) {
   const { limit, window } = options;
 
@@ -22,8 +20,7 @@ function slidingWindowCounter(options, store) {
       await store.set(ip, data);
     }
 
-    const timePassed =
-      currentTime - data.currentWindowStart;
+    const timePassed = currentTime - data.currentWindowStart;
 
     // Current window has expired
     if (timePassed >= window) {
@@ -32,25 +29,20 @@ function slidingWindowCounter(options, store) {
       data.currentWindowStart = currentTime;
     }
 
-    const timeIntoCurrentWindow =
-      currentTime - data.currentWindowStart;
+    const timeIntoCurrentWindow = currentTime - data.currentWindowStart;
 
     // Calculate weight of previous window
-    const previousWindowWeight =
-      (window - timeIntoCurrentWindow) / window;
+    const previousWindowWeight = (window - timeIntoCurrentWindow) / window;
 
     // Estimate requests in sliding window
     const estimatedCount =
-      data.previousCount * previousWindowWeight +
-      data.currentCount;
+      data.previousCount * previousWindowWeight + data.currentCount;
 
     // Limit exceeded
     if (estimatedCount >= limit) {
-      const resetTime =
-        data.currentWindowStart + window;
+      const resetTime = data.currentWindowStart + window;
 
-      const retryAfter =
-        (resetTime - currentTime) / 1000;
+      const retryAfter = (resetTime - currentTime) / 1000;
 
       setRateLimitHeaders(res, {
         limit,
@@ -65,14 +57,11 @@ function slidingWindowCounter(options, store) {
 
     // Request allowed
     data.currentCount++;
+    await store.set(ip, data);
 
-    const remaining = Math.max(
-      0,
-      Math.floor(limit - estimatedCount - 1)
-    );
+    const remaining = Math.max(0, Math.floor(limit - estimatedCount - 1));
 
-    const resetTime =
-      data.currentWindowStart + window;
+    const resetTime = data.currentWindowStart + window;
 
     setRateLimitHeaders(res, {
       limit,

@@ -1,76 +1,46 @@
 const setRateLimitHeaders = require("../utils/rateLimitHeaders");
-
-console.log("Token Bucket");
+const { StorageUnavailableError } = require("../storage/errors");
 
 function tokenBucket(options, store) {
-  const { capacity, refillRate, refillWindow } = options;
+  const { capacity, refillRate, refillWindow, failMode } = options;
 
   return async (req, res, next) => {
-    const ip = req.headers["x-test-ip"] || req.ip;
-    const currentTime = Date.now();
+    try {
+      const ip = req.headers["x-test-ip"] || req.ip;
+      const key = `limitmesh:token-bucket:${ip}`;
 
-    let bucket = await store.get(ip);
+      const { allowed, remaining, retryAfterMs, currentTime, timeToFullMs } =
+        await store.checkTokenBucket(key, capacity, refillRate, refillWindow);
 
-    // First request from this IP
-    if (!bucket) {
-      bucket = {
-        tokens: capacity,
-        lastRefillTime: currentTime,
-      };
-
-      await store.set(ip, bucket);
-    }
-
-    // Calculate time passed
-    const timePassed =
-      currentTime - bucket.lastRefillTime;
-
-    // Calculate tokens to add
-    const tokensToAdd =
-      refillRate * (timePassed / refillWindow);
-
-    bucket.tokens = Math.min(
-      capacity,
-      bucket.tokens + tokensToAdd
-    );
-
-    bucket.lastRefillTime = currentTime;
-
-    // Request allowed
-    if (bucket.tokens >= 1) {
-      bucket.tokens--;
+      const resetTime = currentTime + timeToFullMs;
 
       setRateLimitHeaders(res, {
         limit: capacity,
-        remaining: bucket.tokens,
+        remaining,
         lastRequestTime: currentTime,
-        resetTime:
-          currentTime +
-          ((1 - bucket.tokens) / refillRate) *
-            refillWindow,
+        resetTime,
+        retryAfter: allowed ? 0 : retryAfterMs / 1000,
       });
 
+      if (!allowed) {
+        return res.status(429).send("Too Many Requests");
+      }
+
       next();
-      return;
+    } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        console.error("Rate limit storage unavailable:", error.message);
+
+        if (failMode === "open") {
+          return next();
+        }
+
+        return res.status(503).send("Rate limiter temporarily unavailable");
+      }
+
+      // Unexpected errors should be passed to Express error handling.
+      return next(error);
     }
-
-    // Request rejected
-    const timeUntilNextToken =
-      ((1 - bucket.tokens) / refillRate) *
-      refillWindow;
-
-    const resetTime =
-      currentTime + timeUntilNextToken;
-
-    setRateLimitHeaders(res, {
-      limit: capacity,
-      remaining: 0,
-      lastRequestTime: currentTime,
-      resetTime,
-      retryAfter: timeUntilNextToken / 1000,
-    });
-
-    res.status(429).send("Too Many Requests");
   };
 }
 

@@ -1,7 +1,4 @@
 const setRateLimitHeaders = require("../utils/rateLimitHeaders");
-const { fixedWindowCheck } = require("../lib/redisScripts");
-
-console.log("Fixed Window");
 
 function fixedWindow(options, store) {
   const { limit, window } = options;
@@ -13,7 +10,7 @@ function fixedWindow(options, store) {
 
       const currentTime = Date.now();
 
-      const { allowed, count, ttl } = await fixedWindowCheck(
+      const { allowed, count, ttl } = await store.checkFixedWindow(
         key,
         limit,
         window

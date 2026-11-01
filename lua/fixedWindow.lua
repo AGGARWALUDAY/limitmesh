@@ -1,4 +1,3 @@
-
 local currentCount = redis.call("GET", KEYS[1])
 
 if not currentCount then

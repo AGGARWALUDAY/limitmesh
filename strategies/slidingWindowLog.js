@@ -1,7 +1,5 @@
 const setRateLimitHeaders = require("../utils/rateLimitHeaders");
 
-console.log("Sliding Window Log");
-
 function slidingWindowLog(options, store) {
   const { limit, window } = options;
 
@@ -20,10 +18,7 @@ function slidingWindowLog(options, store) {
     const windowStart = currentTime - window;
 
     // Remove expired requests
-    while (
-      timestamps.length > 0 &&
-      timestamps[0] < windowStart
-    ) {
+    while (timestamps.length > 0 && timestamps[0] < windowStart) {
       timestamps.shift();
     }
 
@@ -31,8 +26,7 @@ function slidingWindowLog(options, store) {
     if (timestamps.length >= limit) {
       const resetTime = timestamps[0] + window;
 
-      const retryAfter =
-        (resetTime - currentTime) / 1000;
+      const retryAfter = (resetTime - currentTime) / 1000;
 
       setRateLimitHeaders(res, {
         limit,
@@ -47,9 +41,9 @@ function slidingWindowLog(options, store) {
 
     // Request allowed
     timestamps.push(currentTime);
+    await store.set(ip, timestamps);
 
-    const resetTime =
-      timestamps[0] + window;
+    const resetTime = timestamps[0] + window;
 
     setRateLimitHeaders(res, {
       limit,
