@@ -1,7 +1,8 @@
 const setRateLimitHeaders = require("../utils/rateLimitHeaders");
+const { StorageUnavailableError } = require("../storage/errors");
 
 function fixedWindow(options, store) {
-  const { limit, window } = options;
+  const { limit, window, failMode } = options;
 
   return async (req, res, next) => {
     try {
@@ -31,9 +32,17 @@ function fixedWindow(options, store) {
         return res.status(429).send("Too Many Requests");
       }
 
-      next();
+      return next();
     } catch (error) {
-      next(error);
+      if (error instanceof StorageUnavailableError) {
+        if (failMode === "open") {
+          return next();
+        }
+
+        return res.status(503).send("Service Unavailable");
+      }
+
+      return next(error);
     }
   };
 }

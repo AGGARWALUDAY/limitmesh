@@ -1,58 +1,51 @@
+const { randomUUID } = require("crypto");
 const setRateLimitHeaders = require("../utils/rateLimitHeaders");
+const { StorageUnavailableError } = require("../storage/errors");
 
 function slidingWindowLog(options, store) {
-  const { limit, window } = options;
+  const { limit, window, failMode } = options;
 
   return async (req, res, next) => {
-    const ip = req.headers["x-test-ip"] || req.ip;
-    const currentTime = Date.now();
+    try {
+      const ip = req.headers["x-test-ip"] || req.ip;
+      const key = `limitmesh:sliding-window-log:${ip}`;
 
-    let timestamps = await store.get(ip);
+      const currentTime = Date.now();
+      const requestId = randomUUID();
 
-    // First request from this IP
-    if (!timestamps) {
-      timestamps = [];
-      await store.set(ip, timestamps);
-    }
-
-    const windowStart = currentTime - window;
-
-    // Remove expired requests
-    while (timestamps.length > 0 && timestamps[0] < windowStart) {
-      timestamps.shift();
-    }
-
-    // Limit exceeded
-    if (timestamps.length >= limit) {
-      const resetTime = timestamps[0] + window;
-
-      const retryAfter = (resetTime - currentTime) / 1000;
+      const { allowed, remaining, resetTime, retryAfter } =
+        await store.checkSlidingWindowLog(
+          key,
+          limit,
+          window,
+          currentTime,
+          requestId
+        );
 
       setRateLimitHeaders(res, {
         limit,
-        remaining: 0,
+        remaining,
         lastRequestTime: currentTime,
         resetTime,
-        retryAfter,
+        retryAfter: allowed ? 0 : retryAfter,
       });
 
-      return res.status(429).send("Too Many Requests");
+      if (!allowed) {
+        return res.status(429).send("Too Many Requests");
+      }
+
+      return next();
+    } catch (error) {
+      if (error instanceof StorageUnavailableError) {
+        if (failMode === "open") {
+          return next();
+        }
+
+        return res.status(503).send("Service Unavailable");
+      }
+
+      return next(error);
     }
-
-    // Request allowed
-    timestamps.push(currentTime);
-    await store.set(ip, timestamps);
-
-    const resetTime = timestamps[0] + window;
-
-    setRateLimitHeaders(res, {
-      limit,
-      remaining: limit - timestamps.length,
-      lastRequestTime: currentTime,
-      resetTime,
-    });
-
-    next();
   };
 }
 

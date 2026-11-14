@@ -26,19 +26,16 @@ function tokenBucket(options, store) {
         return res.status(429).send("Too Many Requests");
       }
 
-      next();
+      return next();
     } catch (error) {
       if (error instanceof StorageUnavailableError) {
-        console.error("Rate limit storage unavailable:", error.message);
-
         if (failMode === "open") {
           return next();
         }
 
-        return res.status(503).send("Rate limiter temporarily unavailable");
+        return res.status(503).send("Service Unavailable");
       }
 
-      // Unexpected errors should be passed to Express error handling.
       return next(error);
     }
   };
