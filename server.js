@@ -3,6 +3,7 @@ const createRateLimiter = require("./middleware/RateLimiter.js");
 const { connectRedis } = require("./lib/redisClient");
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = 3000;
 const metricsMiddleware = require("./metrics/metricsMiddleware");
 const { registry } = require("./metrics/registry");
